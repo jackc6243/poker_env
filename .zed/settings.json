@@ -1,0 +1,12 @@
+{
+  "lsp": {
+    "clangd": {
+      "arguments": [
+        "--compile-commands-dir=build",
+        "--background-index",
+        "--clang-tidy",
+        "--header-insertion=never"
+      ]
+    }
+  }
+}
