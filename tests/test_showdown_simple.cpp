@@ -226,10 +226,10 @@ TEST(SidePotTest, FoldedPlayerExcluded) {
 
   auto pots = calculate_side_pots(state);
 
-  // Folded player shouldn't be in any pot
+  // Folded player's chips should be in pot, but they can't win
   ASSERT_EQ(pots.size(), 1);
-  EXPECT_EQ(pots[0].amount, 200); // Only players 1 and 2
-  EXPECT_EQ(pots[0].eligible_players.size(), 2);
+  EXPECT_EQ(pots[0].amount, 300); // All three players contributed 100 each
+  EXPECT_EQ(pots[0].eligible_players.size(), 2); // But only 2 can win
 }
 
 // Test full showdown resolution

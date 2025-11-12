@@ -79,105 +79,19 @@ public:
     }
   }
 
-  void start() {
-    state->betting_round = BettingRound::PREFLOP;
-    state->dealer_button_idx =
-        (state->dealer_button_idx + 1) % state->n_players;
+  void auto_start() {
+    remove_inactive_players();
+    reset_hand_random();
+    start_hand();
+    post_blinds();
   }
 
-  void reset_hand_random() {
-    if (state->n_players == 0) {
-      throw std::runtime_error("Cannot deal hand with no players");
-    }
-
-    std::shuffle(deck_.begin(), deck_.end(), rng_);
-
-    // Deal 2 cards to each player
-    int deck_idx = 0;
-    for (int i = 0; i < state->n_players; i++) {
-      auto &player = state->players[i];
-      player.cards[0] = deck_[deck_idx++];
-      player.cards[1] = deck_[deck_idx++];
-      player.bet = 0;
-      player.state = PlayerState::State::ACTIVE; // Reset player state
-    }
-
-    for (int i = 0; i < 5; i++) {
-      state->openCards[i] = deck_[deck_idx++];
-    }
-
-    state->pot = 0;
-    state->current_bet = 0;
-  }
-
-  // manualy reset hand, must either call this or reset_hand_random before
-  // starting
-  void reset_hand_manual(std::array<Card, 5> &open_cards,
-                         std::vector<std::array<Card, 2>> &player_cards) {
-    if (state->n_players == 0) {
-      throw std::runtime_error("Cannot reset hand with no players");
-    }
-    if (state->n_players != player_cards.size()) {
-      throw std::runtime_error(
-          "Number of players are different from the cards given");
-    }
-    state->openCards = open_cards;
-    for (int i = 0; i < state->n_players; i++) {
-      auto &player = state->players[i];
-      player.cards = player_cards[i];
-      player.bet = 0;
-      player.state = PlayerState::State::ACTIVE;
-    }
-
-    state->pot = 0;
-    state->current_bet = 0;
-  }
-
-  void post_blinds() {
-    if (state->n_players < 2)
-      throw std::runtime_error("We need at least 2 players to post blinds");
-
-    // Calculate blind positions
-    // In heads-up (2 players), dealer is small blind
-    // In 3+ players, player after dealer is small blind
-    int small_blind_idx, big_blind_idx;
-
-    if (state->n_players == 2) {
-      // Heads-up: dealer is small blind
-      small_blind_idx = state->dealer_button_idx;
-      big_blind_idx = (state->dealer_button_idx + 1) % state->n_players;
-    } else {
-      // 3+ players: normal positions
-      small_blind_idx = (state->dealer_button_idx + 1) % state->n_players;
-      big_blind_idx = (state->dealer_button_idx + 2) % state->n_players;
-    }
-
-    if (state->players[small_blind_idx].stack < state->small_amount) {
-      throw std::runtime_error("Small blind player does not have enough chips");
-    }
-
-    if (state->players[big_blind_idx].stack < state->big_amount) {
-      throw std::runtime_error("Big blind player does not have enough chips");
-    }
-
-    state->players[small_blind_idx].stack -= state->small_amount;
-    state->players[small_blind_idx].bet = state->small_amount;
-
-    state->players[big_blind_idx].stack -= state->big_amount;
-    state->players[big_blind_idx].bet = state->big_amount;
-
-    state->pot = state->small_amount + state->big_amount;
-    state->current_bet = state->big_amount;
-    state->last_aggressor_idx = big_blind_idx;
-
-    // Set first to act: in heads-up, small blind (dealer) acts first
-    // In 3+ players, first player after big blind acts first
-    if (state->n_players == 2) {
-      state->current_player_idx =
-          small_blind_idx; // Dealer/small blind acts first in heads-up
-    } else {
-      state->current_player_idx = (big_blind_idx + 1) % state->n_players;
-    }
+  void auto_start(std::array<Card, 5> &open_cards,
+                  std::vector<std::array<Card, 2>> &player_cards) {
+    remove_inactive_players();
+    reset_hand_manual(open_cards, player_cards);
+    start_hand();
+    post_blinds();
   }
 
   std::optional<int> player_act(Action action) {
@@ -233,8 +147,139 @@ public:
   const BoardState<N> &get_board_state() const { return *state; }
 
 private:
+  void remove_inactive_players() {
+    for (int i = state->n_players - 1; i >= 0; i--) {
+      if (state->players[i].state == PlayerState::State::INACTIVE) {
+        // Shift all players after this one down
+        for (int j = i; j < state->n_players - 1; j++) {
+          state->players[j] = state->players[j + 1];
+        }
+        state->n_players--;
+      }
+    }
+  }
+
+  void start_hand() {
+    if (state->betting_round != BettingRound::SETUP) {
+      throw std::runtime_error("Can only start from SETUP betting round");
+    }
+    state->betting_round = BettingRound::PREFLOP;
+    state->dealer_button_idx =
+        (state->dealer_button_idx + 1) % state->n_players;
+  }
+
+  void reset_hand_random() {
+    if (state->n_players == 0) {
+      throw std::runtime_error("Cannot deal hand with no players");
+    }
+
+    std::shuffle(deck_.begin(), deck_.end(), rng_);
+
+    // Deal 2 cards to each player
+    int deck_idx = 0;
+    for (int i = 0; i < state->n_players; i++) {
+      auto &player = state->players[i];
+      player.cards[0] = deck_[deck_idx++];
+      player.cards[1] = deck_[deck_idx++];
+      player.bet = 0;
+      player.state = PlayerState::State::ACTIVE;
+    }
+
+    for (int i = 0; i < 5; i++) {
+      state->openCards[i] = deck_[deck_idx++];
+    }
+
+    state->pot = 0;
+    state->current_bet = 0;
+  }
+
+  // manualy reset hand, must either call this or reset_hand_random before
+  // starting
+  void reset_hand_manual(std::array<Card, 5> &open_cards,
+                         std::vector<std::array<Card, 2>> &player_cards) {
+    if (state->n_players == 0) {
+      throw std::runtime_error("Cannot reset hand with no players");
+    }
+    if (state->n_players != player_cards.size()) {
+      throw std::runtime_error(
+          "Number of players are different from the cards given");
+    }
+    state->openCards = open_cards;
+    for (int i = 0; i < state->n_players; i++) {
+      auto &player = state->players[i];
+      player.cards = player_cards[i];
+      player.bet = 0;
+      player.state = PlayerState::State::ACTIVE;
+    }
+
+    state->pot = 0;
+    state->current_bet = 0;
+  }
+
+  void post_blinds() {
+    if (state->n_players < 2)
+      throw std::runtime_error("We need at least 2 players to post blinds");
+
+    // Calculate blind positions
+    // In heads-up (2 players), dealer is small blind
+    // In 3+ players, player after dealer is small blind
+    int small_blind_idx, big_blind_idx;
+
+    if (state->n_players == 2) {
+      // Heads-up: dealer is small blind
+      small_blind_idx = state->dealer_button_idx;
+      big_blind_idx = (state->dealer_button_idx + 1) % state->n_players;
+    } else {
+      // 3+ players: normal positions
+      small_blind_idx = (state->dealer_button_idx + 1) % state->n_players;
+      big_blind_idx = (state->dealer_button_idx + 2) % state->n_players;
+    }
+
+    // here we are keepting the inavriant that both small and big blind
+    // players must be active
+    int sb_amount = 0;
+    if (state->players[small_blind_idx].stack < state->small_amount) {
+      throw std::runtime_error("Small blind player does not have enough chips");
+    }
+    // Post small blind
+    sb_amount =
+        std::min(state->small_amount, state->players[small_blind_idx].stack);
+    state->players[small_blind_idx].stack -= sb_amount;
+    state->players[small_blind_idx].bet = sb_amount;
+    if (state->players[small_blind_idx].stack == 0) {
+      state->players[small_blind_idx].state = PlayerState::State::ALL_IN;
+    }
+
+    int bb_amount = 0;
+    if (state->players[big_blind_idx].stack < state->big_amount) {
+      throw std::runtime_error("Big blind player does not have enough chips");
+    }
+    // Post big blind
+    bb_amount =
+        std::min(state->big_amount, state->players[big_blind_idx].stack);
+    state->players[big_blind_idx].stack -= bb_amount;
+    state->players[big_blind_idx].bet = bb_amount;
+    if (state->players[big_blind_idx].stack == 0) {
+      state->players[big_blind_idx].state = PlayerState::State::ALL_IN;
+    }
+
+    state->pot = sb_amount + bb_amount;
+    state->current_bet = std::max(sb_amount, bb_amount);
+    state->last_aggressor_idx = big_blind_idx;
+
+    // Set first to act: in heads-up, small blind (dealer) acts first
+    // In 3+ players, first player after big blind acts first
+    if (state->n_players == 2) {
+      state->current_player_idx =
+          small_blind_idx; // Dealer/small blind acts first in heads-up
+    } else {
+      state->current_player_idx = (big_blind_idx + 1) % state->n_players;
+    }
+  }
+
   void player_fold(PlayerState &player) {
     player.state = PlayerState::State::FOLDED;
+    state->last_aggressor_idx = next_active_player(state->current_player_idx);
   }
 
   void player_check(PlayerState &player) {
@@ -249,11 +294,12 @@ private:
     int all_in_amount = player.stack;
     place_bet(player, all_in_amount);
     player.state = PlayerState::State::ALL_IN;
+    state->last_aggressor_idx = next_active_player(state->current_player_idx);
   }
 
   void player_bet(PlayerState &player, int amount) {
     // Can only bet if no one has bet yet
-    if (state->current_bet != player.bet) {
+    if (state->current_bet > player.bet) {
       throw std::runtime_error("Cannot bet - must call or raise");
     }
 
@@ -299,7 +345,9 @@ private:
 
   BettingRound advance_betting_round() {
     // Advance to next betting round
-    if (state->betting_round == BettingRound::SHOWDOWN) {
+    if (state->betting_round == BettingRound::RIVER ||
+        state->betting_round == BettingRound::SHOWDOWN) {
+      // After river, go to showdown and finalize
       finalise_showdown();
       state->betting_round = BettingRound::SETUP;
     } else {
@@ -307,50 +355,58 @@ private:
           static_cast<BettingRound>(static_cast<int>(state->betting_round) + 1);
     }
 
-    state->current_player_idx =
-        (state->dealer_button_idx + 1) % state->n_players;
+    state->current_player_idx = next_active_player(state->current_player_idx);
+    state->last_aggressor_idx = state->current_player_idx;
     return state->betting_round;
   };
 
-  void advance_to_next_active_player() {
-    int start_idx = state->current_player_idx;
-
+  int next_active_player(int start_idx) {
+    int next_idx = start_idx;
     do {
-      state->current_player_idx =
-          (state->current_player_idx + 1) % state->n_players;
+      next_idx = (next_idx + 1) % state->n_players;
 
-      if (state->players[state->current_player_idx].state ==
-          PlayerState::State::INACTIVE) {
-        state->players[state->current_player_idx].state =
-            PlayerState::State::FOLDED;
+      if (state->players[next_idx].state == PlayerState::State::INACTIVE) {
+        state->players[next_idx].state = PlayerState::State::FOLDED;
       }
-      if (state->current_player_idx == start_idx) {
+      if (next_idx == start_idx) {
         break;
       }
-    } while (state->players[state->current_player_idx].state !=
-             PlayerState::State::ACTIVE);
+    } while (state->players[next_idx].state != PlayerState::State::ACTIVE);
+    return next_idx;
+  }
+
+  int n_active_players() {
+    int n = 0;
+    for (int i = 0; i < state->n_players; i++) {
+      auto &player = state->players[i];
+      if (player.state == PlayerState::ACTIVE ||
+          player.state == PlayerState::ALL_IN) {
+        n++;
+      }
+    }
+    return n;
   }
 
   // returns std::nullopt if hand is over, or player_idx if otherwise
   std::optional<int> advance_player_idx() {
     int cur_player_idx = state->current_player_idx;
-    advance_to_next_active_player();
+    int next_active_idx = next_active_player(cur_player_idx);
 
-    // If only <=1 active player, advance_to_next_active_player will do nothing
-    if (cur_player_idx == state->current_player_idx) {
+    // If only <=1 active player, finish the game immediately
+    if (n_active_players() <= 1) {
       finalise_showdown();
       state->betting_round = BettingRound::SETUP;
       return std::nullopt;
     }
 
     // Check if we've completed the betting round
-    if (state->last_aggressor_idx == state->current_player_idx) {
+    if (state->last_aggressor_idx == next_active_idx) {
       return (advance_betting_round() == BettingRound::SETUP)
                  ? std::nullopt
                  : std::optional<int>(state->current_player_idx);
     }
 
-    return state->current_player_idx;
+    return state->current_player_idx = next_active_idx;
   }
 
   inline void place_bet(PlayerState &player, int amount) {
@@ -377,6 +433,7 @@ private:
     state->betting_round = BettingRound::SETUP;
     state->big_amount = big_amount_;
     state->small_amount = small_amount_;
+    state->dealer_button_idx = -1;
     return state;
   };
 

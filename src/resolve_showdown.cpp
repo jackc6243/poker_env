@@ -270,41 +270,53 @@ template <int N>
 std::vector<Pot> calculate_side_pots(const BoardState<N> &state) {
   std::vector<Pot> pots;
 
-  // Create list of (player_idx, bet_amount) for players not folded
-  std::vector<std::pair<int, int>> player_bets;
+  // Create list of (player_idx, bet_amount, is_folded) for all players
+  std::vector<std::tuple<int, int, bool>> player_bets;
   for (int i = 0; i < state.n_players; i++) {
-    if (state.players[i].state != PlayerState::State::FOLDED) {
-      player_bets.push_back({i, state.players[i].bet});
+    if (state.players[i].bet > 0) {
+      bool is_folded = (state.players[i].state == PlayerState::State::FOLDED);
+      player_bets.push_back({i, state.players[i].bet, is_folded});
     }
   }
 
   // Sort by bet amount
   std::sort(player_bets.begin(), player_bets.end(),
-            [](const auto &a, const auto &b) { return a.second < b.second; });
+            [](const auto &a, const auto &b) {
+              return std::get<1>(a) < std::get<1>(b);
+            });
 
   int prev_bet_level = 0;
-  std::vector<int> remaining_players;
+  std::vector<int>
+      remaining_players; // All players contributing to current pot level
+  std::vector<int> eligible_players; // Only non-folded players eligible to win
+
   for (const auto &pb : player_bets) {
-    remaining_players.push_back(pb.first);
+    remaining_players.push_back(std::get<0>(pb));
+    if (!std::get<2>(pb)) { // Not folded
+      eligible_players.push_back(std::get<0>(pb));
+    }
   }
 
   for (size_t i = 0; i < player_bets.size(); i++) {
-    int current_bet_level = player_bets[i].second;
+    int current_bet_level = std::get<1>(player_bets[i]);
 
     if (current_bet_level > prev_bet_level) {
       Pot pot;
       pot.amount =
           (current_bet_level - prev_bet_level) * remaining_players.size();
-      pot.eligible_players = remaining_players;
+      pot.eligible_players = eligible_players; // Only non-folded can win
       pots.push_back(pot);
       prev_bet_level = current_bet_level;
     }
 
-    // Remove this player from remaining players for next pot
+    // Remove this player from both lists for next pot
+    int player_idx = std::get<0>(player_bets[i]);
     remaining_players.erase(std::remove(remaining_players.begin(),
-                                        remaining_players.end(),
-                                        player_bets[i].first),
+                                        remaining_players.end(), player_idx),
                             remaining_players.end());
+    eligible_players.erase(std::remove(eligible_players.begin(),
+                                       eligible_players.end(), player_idx),
+                           eligible_players.end());
   }
 
   return pots;

@@ -17,7 +17,7 @@ public:
       if (player_mp_.size() >= N) {
         throw std::runtime_error("There are already the max number of players");
       }
-      player_mp_[id] = PlayerInfo{.active = true};
+      player_mp_[id] = PlayerInfo{.idx = -1, .active = true, .stack_topup = 0};
     }
   }
 
@@ -36,13 +36,16 @@ public:
   void remove_player(const std::string &id) {
     auto player = player_mp_.find(id);
     if (player != player_mp_.end()) {
-      if (player->second.idx == -1) {
+      // If player not yet in board (idx == -1) and has no chips (stack_topup ==
+      // 0), completely remove them from the map
+      if (player->second.idx == -1 && player->second.stack_topup == 0) {
         player_mp_.erase(player);
       } else {
+        // Otherwise, mark as inactive to be handled on next reset
         player->second.active = false;
       }
     } else {
-      throw std::runtime_error("Trying to remove a player that doesn't exists");
+      throw std::runtime_error("Trying to remove a player that doesn't exist");
     }
   }
 
@@ -68,48 +71,52 @@ public:
       throw std::runtime_error("Need at least 2 players to start a hand");
     }
 
-    // Convert map to vector for sorting
-    std::vector<std::pair<std::string, PlayerInfo>> entries(player_mp_.begin(),
-                                                            player_mp_.end());
-    sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
-      return a.second.idx < b.second.idx;
-    });
+    std::vector<std::pair<std::string, PlayerInfo>> existing_players;
+    std::vector<std::pair<std::string, PlayerInfo>> new_players;
+
+    for (const auto &[id, info] : player_mp_) {
+      if (info.idx == -1) {
+        new_players.emplace_back(id, info);
+      } else {
+        existing_players.emplace_back(id, info);
+      }
+    }
+
+    // Sort existing players by their current index
+    sort(existing_players.begin(), existing_players.end(),
+         [](const auto &a, const auto &b) {
+           return a.second.idx < b.second.idx;
+         });
 
     std::vector<std::pair<std::string, int>> left_players;
 
-    // make sure that we keep the indexes aligned when we delete existing
-    // players
+    // Remove inactive players and adjust indices
     int n_deleted = 0;
-    for (auto &[id, info] : entries) {
-      if (info.idx == -1)
-        continue;
+    for (auto &[id, info] : existing_players) {
       if (!info.active) {
+        // Remove from board
         auto remove_player_state = board_.remove_player(info.idx - n_deleted);
         n_deleted++;
         player_mp_.erase(id);
         left_players.emplace_back(id, remove_player_state.stack);
       } else {
+        // Update index after deletions and apply topup
         player_mp_[id].idx -= n_deleted;
         board_.player_stack_topup(player_mp_[id].idx, info.stack_topup);
         player_mp_[id].stack_topup = 0;
       }
     }
 
-    // now we add new players
-    for (auto &[id, info] : entries) {
-      if (info.idx == -1) {
-        player_mp_[id].idx = board_.add_player(info.stack_topup);
-        player_mp_[id].stack_topup = 0;
-        if (!info.active) {
-          throw std::runtime_error(
-              "this should never happen, some bug occurred");
-        }
+    // Add new players to board
+    for (auto &[id, info] : new_players) {
+      if (!info.active) {
+        throw std::runtime_error("this should never happen, some bug occurred");
       }
+      player_mp_[id].idx = board_.add_player(info.stack_topup);
+      player_mp_[id].stack_topup = 0;
     }
 
-    board_.reset_hand_random();
-    board_.post_blinds();
-    board_.start();
+    board_.auto_start();
 
     return {board_.get_board_state(), left_players};
   }
@@ -135,6 +142,10 @@ public:
 
   const std::unordered_map<std::string, PlayerInfo> &get_player_map() const {
     return player_mp_;
+  }
+
+  const BoardState<N> &get_board_state() const {
+    return board_.get_board_state();
   }
 
 private:

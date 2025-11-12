@@ -59,12 +59,11 @@ TEST_F(PokerBoardTest, RemovePlayer) {
 TEST_F(PokerBoardTest, PostBlindsHeadsUp) {
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
+  board.auto_start();
 
   auto state = board.get_board_state();
 
-  // In heads-up, dealer (player 0 after first button rotation) is small blind
+  // In heads-up, dealer is small blind
   int small_blind_idx = state.dealer_button_idx;
   int big_blind_idx = (state.dealer_button_idx + 1) % 2;
 
@@ -81,8 +80,7 @@ TEST_F(PokerBoardTest, PostBlindsMultiplePlayers) {
   board.add_player(1000);
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
+  board.auto_start();
 
   auto state = board.get_board_state();
 
@@ -101,9 +99,7 @@ TEST_F(PokerBoardTest, PostBlindsMultiplePlayers) {
 TEST_F(PokerBoardTest, PlayerFold) {
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
   int acting_player = state.current_player_idx;
@@ -121,9 +117,7 @@ TEST_F(PokerBoardTest, PlayerFold) {
 TEST_F(PokerBoardTest, PlayerCall) {
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
   int acting_player = state.current_player_idx;
@@ -145,9 +139,7 @@ TEST_F(PokerBoardTest, PlayerCall) {
 TEST_F(PokerBoardTest, PlayerRaise) {
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
   int acting_player = state.current_player_idx;
@@ -167,9 +159,7 @@ TEST_F(PokerBoardTest, PlayerBet) {
   board.add_player(1000);
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
 
@@ -208,9 +198,7 @@ TEST_F(PokerBoardTest, PlayerCheck) {
   board.add_player(1000);
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   // Get to flop with everyone calling
   for (int i = 0; i < 3; i++) {
@@ -246,9 +234,7 @@ TEST_F(PokerBoardTest, PlayerCheck) {
 TEST_F(PokerBoardTest, PlayerAllIn) {
   board.add_player(200);
   board.add_player(200);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
   int acting_player = state.current_player_idx;
@@ -276,9 +262,7 @@ TEST_F(PokerBoardTest, PlayerAllIn) {
 TEST_F(PokerBoardTest, WrongPlayerAct) {
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
   int wrong_player = (state.current_player_idx + 1) % 2;
@@ -291,9 +275,7 @@ TEST_F(PokerBoardTest, WrongPlayerAct) {
 TEST_F(PokerBoardTest, BettingRoundProgression) {
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
   EXPECT_EQ(state.betting_round, BettingRound::PREFLOP);
@@ -320,11 +302,9 @@ TEST_F(PokerBoardTest, BettingRoundProgression) {
 TEST_F(PokerBoardTest, InsufficientChips) {
   board.add_player(5); // Not enough for small blind (needs 10)
   board.add_player(1000);
-  board.reset_hand_random();
-  // Before start(), dealer_button is 0
-  // In heads-up: small blind = dealer = player 0 (5 chips, needs 10)
 
-  EXPECT_THROW(board.post_blinds(), std::runtime_error);
+  // auto_start should throw when a player doesn't have enough for blinds
+  EXPECT_THROW(board.auto_start(), std::runtime_error);
 }
 
 // Test hand ending when one player remains
@@ -332,9 +312,7 @@ TEST_F(PokerBoardTest, OnePlayerRemaining) {
   board.add_player(1000);
   board.add_player(1000);
   board.add_player(1000);
-  board.reset_hand_random();
-  board.post_blinds();
-  board.start();
+  board.auto_start();
 
   auto state = board.get_board_state();
 
