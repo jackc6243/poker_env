@@ -183,6 +183,12 @@ public:
   std::optional<int> player_act(Action action) {
     const auto idx = action.player_id;
     check_correct_player(idx);
+
+    if (state->players[state->current_player_idx].state ==
+        PlayerState::INACTIVE) {
+      throw std::runtime_error("Inactive player can't make any actions");
+    }
+
     PlayerState &player = get_player(idx);
 
     switch (action.action) {
@@ -257,8 +263,7 @@ private:
     }
 
     place_bet(player, amount);
-    state->last_aggressor_idx =
-        state->current_player_idx; // This player is now the aggressor
+    state->last_aggressor_idx = state->current_player_idx;
   }
 
   void player_call(PlayerState &player) {
@@ -287,15 +292,12 @@ private:
     }
 
     place_bet(player, additional_amount);
-    state->last_aggressor_idx =
-        state->current_player_idx; // This player is now the aggressor
+    state->last_aggressor_idx = state->current_player_idx;
   }
 
   void finalise_showdown() { finalise_showdown_impl(*state); }
 
   BettingRound advance_betting_round() {
-    state->last_aggressor_idx = -1; // Reset aggressor for new round
-
     // Advance to next betting round
     if (state->betting_round == BettingRound::SHOWDOWN) {
       finalise_showdown();
@@ -312,24 +314,16 @@ private:
 
   void advance_to_next_active_player() {
     int start_idx = state->current_player_idx;
-    int checked = 0;
 
     do {
       state->current_player_idx =
           (state->current_player_idx + 1) % state->n_players;
-      checked++;
 
       if (state->players[state->current_player_idx].state ==
           PlayerState::State::INACTIVE) {
         state->players[state->current_player_idx].state =
             PlayerState::State::FOLDED;
       }
-
-      // Prevent infinite loop if no active players
-      if (checked >= state->n_players) {
-        break;
-      }
-
       if (state->current_player_idx == start_idx) {
         break;
       }
@@ -339,22 +333,15 @@ private:
 
   // returns std::nullopt if hand is over, or player_idx if otherwise
   std::optional<int> advance_player_idx() {
-    // Check if only one active player remains (others folded)
-    int active_count = 0;
-    for (int i = 0; i < state->n_players; i++) {
-      if (state->players[i].state == PlayerState::State::ACTIVE) {
-        active_count++;
-      }
-    }
+    int cur_player_idx = state->current_player_idx;
+    advance_to_next_active_player();
 
-    // If only one active player (or all others are all-in), end hand
-    if (active_count <= 1) {
+    // If only <=1 active player, advance_to_next_active_player will do nothing
+    if (cur_player_idx == state->current_player_idx) {
       finalise_showdown();
       state->betting_round = BettingRound::SETUP;
       return std::nullopt;
     }
-
-    advance_to_next_active_player();
 
     // Check if we've completed the betting round
     if (state->last_aggressor_idx == state->current_player_idx) {

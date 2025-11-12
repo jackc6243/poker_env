@@ -6,6 +6,12 @@
 #include <string>
 
 constexpr int MAX_PLAYERS = 6;
+std::vector<std::pair<std::string, int>> starting_player_moneys = {
+    {"p1", 100},
+    {"p2", 100},
+    {"p3", 100},
+    {"p4", 100},
+};
 
 void printPlayerMap(
     const std::unordered_map<
@@ -130,6 +136,11 @@ int main() {
   PokerEnvironment<MAX_PLAYERS> env;
   std::string line;
   bool has_state = false;
+
+  for (auto &[id, money] : starting_player_moneys) {
+    env.upsert_player(id);
+    env.top_up_stack(id, money);
+  }
 
   while (true) {
     std::cout << "> ";
